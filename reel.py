@@ -124,6 +124,28 @@ SKIP = {"Silence", "Inside, small room", "Inside, large room or hall", "Outside,
         "Outside, rural or natural"}
 
 
+YAMNET_TGZ = "https://registry.npmjs.org/@apocaliss92/scrypted-yamnet/-/scrypted-yamnet-0.0.3.tgz"
+YAMNET_SHA = "10c95ea3eb9a7bb4cb8bddf6feb023250381008177ac162ce169694d05c317de"
+
+
+def ensure_yamnet():
+    """Fetch YAMNet (Google, Apache-2.0) once from the npm registry tarball and verify it."""
+    model = os.path.join(YAMNET_DIR, "yamnet.tflite")
+    if os.path.exists(model):
+        return
+    import hashlib, io, tarfile, urllib.request
+    os.makedirs(YAMNET_DIR, exist_ok=True)
+    data = urllib.request.urlopen(YAMNET_TGZ, timeout=120).read()
+    with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+        files = {m.name.rsplit("/", 1)[-1]: m for m in tf.getmembers() if "/src/model/" in m.name}
+        tfl = tf.extractfile(files["yamnet.tflite"]).read()
+        if hashlib.sha256(tfl).hexdigest() != YAMNET_SHA:
+            raise RuntimeError("YAMNet checksum mismatch")
+        csv_bytes = tf.extractfile(files["yamnet_class_map.csv"]).read()
+    open(os.path.join(YAMNET_DIR, "yamnet_class_map.csv"), "wb").write(csv_bytes)
+    open(model, "wb").write(tfl)
+
+
 def sounds(path, out, win_s=1.0):
     """Non-speech audio: music, singing, instruments, animals, objects, ambience (YAMNet, 521 AudioSet classes)."""
     import csv, wave, numpy as np
@@ -135,6 +157,7 @@ def sounds(path, out, win_s=1.0):
         except ImportError:
             import tensorflow as tf
             Interpreter = tf.lite.Interpreter
+    ensure_yamnet()
     wav = os.path.join(out, "audio.wav")
     if not os.path.exists(wav):
         run(["ffmpeg", "-y", "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", "16000", wav])
